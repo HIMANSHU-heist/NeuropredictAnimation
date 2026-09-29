@@ -32,7 +32,7 @@ p{font-size:clamp(15px,1.25vw,18px);line-height:1.55;color:var(--mu);margin:8px 
 <canvas id="cv"></canvas><canvas id="gc"></canvas>
 <div id="topwrap"><div id="dots"></div><div id="ap"><button id="apM" class="on">Manual</button><button id="apA">Auto</button></div></div>
 <div id="ui"><div id="in"></div></div>
-<audio id="vo" preload="none"></audio>
+<audio id="vo" preload="auto"></audio>
 <div id="start"><h1>NeuroPredict 3D Story</h1><p>Mode nivda</p>
 <div class="row"><button id="sM" class="alt">Manual</button><button id="sA">Auto</button></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -126,24 +126,33 @@ const S=[
 {v:{b:.3,h:.3},cam:[0,10],ch:CH.jr,t:'Honest conclusion',l:['A real but modest gain at a fixed cut-off. EEG-only still has the higher AUC (0.806 vs 0.763; gap not confirmed).','The EEG model transferred poorly and the heart did much of the work. A stacked combiner reached 70.0%, but <b>64.6% is far too low for safety use</b>.'],k:['70.0%','stacked meta-classifier']}];
 const dots=$('dots');S.forEach(()=>dots.appendChild(document.createElement('i')));
 let st=0,mode=0,mt=0,tp=0,sa=0,cur={y:0,z:10};
-// --- autoplay + optional per-step voiceover (audio/1.mp3, audio/2.mp3, ... next to this file) ---
-const vo=$('vo');let auto=false,apT=null;
-function clearAP(){clearTimeout(apT);apT=null}
-function scheduleFallback(){clearAP();const s=S[st],words=(s.l||[]).join(' ').split(/\s+/).length;const dur=Math.max(5500,Math.min(11000,2200+words*90));apT=setTimeout(()=>{if(auto)go(st+1)},dur)}
-function setAuto(v){auto=v;$('apM').classList.toggle('on',!v);$('apA').classList.toggle('on',v);clearAP();if(v)scheduleFallback()}
-vo.addEventListener('playing',clearAP);
-vo.addEventListener('ended',()=>{if(auto)go(st+1)});
-vo.addEventListener('error',()=>{if(auto)scheduleFallback()});
-function playVO(n){vo.pause();vo.src=`audio/${n+1}.mp3`;vo.currentTime=0;vo.play().catch(()=>{if(auto)scheduleFallback()})}
+
+// --- Auto mode synced to ONE narration file: narration.mp3 (~4:12) ---
+// Seconds at which each of the 12 steps starts. Tune after listening (press D to see live time).
+const START=[0,22.5,45.4,66,90,105.3,124,146.5,165.6,187.7,210.2,229.7];
+const vo=$('vo');vo.src='narration.mp3';
+let auto=false,vOK=true,vclk=0,dbg=false;
+const dEl=document.createElement('div');dEl.style.cssText='position:fixed;left:16px;bottom:12px;z-index:9;font:700 13px system-ui;color:#5eead4;display:none';document.body.appendChild(dEl);
+const hasA=()=>vOK&&vo.readyState>0;
+vo.addEventListener('error',()=>{vOK=false});
+vo.addEventListener('loadedmetadata',()=>{if(auto)seek(START[st])});
+function seek(t){vclk=t;if(hasA()){vo.currentTime=t;if(auto)vo.play().catch(()=>{})}}
+function setAuto(v){auto=v;$('apM').classList.toggle('on',!v);$('apA').classList.toggle('on',v);
+if(v){seek(START[st]);vo.play().catch(()=>{})}else vo.pause()}
+function sync(dt){if(!auto)return;if(!hasA())vclk+=dt;const t=hasA()?vo.currentTime:vclk;
+let i=0;while(i+1<START.length&&t>=START[i+1])i++;if(i!==st)go(i,true);
+if(dbg){dEl.textContent='t = '+t.toFixed(1)+' s · step '+(st+1)}}
+addEventListener('keydown',e=>{if(e.key==='d'||e.key==='D'){dbg=!dbg;dEl.style.display=dbg?'block':'none'}});
 $('apM').onclick=e=>{e.stopPropagation();setAuto(false)};$('apA').onclick=e=>{e.stopPropagation();setAuto(true)};
-function go(n){if(n>=S.length)n=0;if(n<0)n=0;st=n;tp=0;const s=S[n];for(const k in A)A[k].t=s.v[k]||0;
+function go(n,fa){if(n>=S.length)n=0;if(n<0)n=0;st=n;tp=0;const s=S[n];for(const k in A)A[k].t=s.v[k]||0;
 $('in').innerHTML=`<div class="s">Step ${n+1} of ${S.length}</div><h1>${s.t}${s.m?'<span id="chip"></span>':''}</h1>${s.l.map(x=>`<p>${x}</p>`).join('')}${s.k?`<div class="k"><strong>${s.k[0]}</strong><span>${s.k[1]}</span></div>`:''}<div id="nv"><button id="bk">‹ Back</button><button id="nx">Next ›</button><span>Space / click</span></div>`;
-[...dots.children].forEach((d,i)=>d.className=i<=n?'on':'');chip();playVO(n);if(auto)scheduleFallback()}
+[...dots.children].forEach((d,i)=>d.className=i<=n?'on':'');chip();if(auto&&!fa)seek(START[n])}
+
 function chip(){const c=$('chip');if(c){c.textContent=mode?'doing math':'resting';c.style.color=mode?RO:M}}
 addEventListener('click',e=>{if(e.target.closest('#ap'))return;if(e.target.id==='bk')go(st-1);else go(st+1)});
 addEventListener('keydown',e=>{if($('start'))return;if(e.code==='Space'||e.key==='ArrowRight'||e.key==='Enter'){e.preventDefault();go(st+1)}else if(e.key==='ArrowLeft'||e.key==='Backspace')go(st-1)});
 let T=0,wf=4,wa=.2,hr=1.2,last=performance.now();
-function frame(now){requestAnimationFrame(frame);const dt=Math.min((now-last)/1000,.05);last=now;T+=dt;mt+=dt;
+function frame(now){requestAnimationFrame(frame);const dt=Math.min((now-last)/1000,.05);last=now;T+=dt;mt+=dt;sync(dt);
 if(mt>3.6){mt=0;mode^=1;chip()}
 wf+=((mode?9:4)-wf)*.05;wa+=((mode?.07:.2)-wa)*.05;hr+=((mode?1.6:1.2)-hr)*.03;
 for(const k in A){const a=A[k];a.o+=(a.t-a.o)*.07;a.l.forEach(o=>{o.visible=a.o>.01;o.traverse(n=>{if(n.material)n.material.opacity=a.o*(n.material.userData.b??1)})})}
