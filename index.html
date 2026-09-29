@@ -7,8 +7,12 @@
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:"Mukta",system-ui,sans-serif;overflow:hidden}
 #cv,#gc{position:fixed;left:0;top:0;display:block}#gc{pointer-events:none}
-#dots{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:16px;display:flex;gap:5px}
+#topwrap{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:16px;display:flex;align-items:center;gap:12px;z-index:5}
+#dots{display:flex;gap:5px}
 #dots i{width:20px;height:3px;border-radius:2px;background:#ffffff26;transition:.4s}#dots i.on{background:var(--ok)}
+#ap{display:flex;background:#0d0b18cc;border:1px solid #ffffff26;border-radius:99px;padding:3px}
+#ap button{border:0;background:transparent;color:#8f89a5;font:700 12px Mukta,system-ui;padding:5px 12px;border-radius:99px;cursor:pointer}
+#ap button.on{background:var(--ok);color:#07060d}
 #ui{position:fixed;top:0;right:0;bottom:0;width:max(360px,30vw);box-sizing:border-box;padding:40px 32px;display:flex;flex-direction:column;justify-content:center;background:#0d0b18;border-left:1px solid #ffffff1a;overflow:auto}
 #in{animation:up .5s}@keyframes up{from{opacity:0;transform:translateY(10px)}}
 .s{font-size:13px;color:var(--ok);font-weight:700;margin-bottom:6px}
@@ -20,8 +24,17 @@ p{font-size:clamp(15px,1.25vw,18px);line-height:1.55;color:var(--mu);margin:8px 
 #nv span{font-size:12px;color:#8f89a5}
 @media (max-width:899px){#ui{top:auto;left:0;width:auto;height:40%;padding:14px 16px;justify-content:flex-start;border-left:0;border-top:1px solid #ffffff1a}h1{font-size:21px;margin-bottom:6px}.k strong{font-size:30px}.k{margin-top:8px}#nv{margin-top:12px}}
 @media (prefers-reduced-motion:reduce){#in{animation:none}}
+#start{position:fixed;inset:0;z-index:20;background:#07060df2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px}
+#start .row{display:flex;gap:14px;margin-top:8px}
+#start button{border:0;border-radius:12px;padding:14px 34px;font:700 18px Mukta,system-ui;cursor:pointer;background:var(--ok);color:#07060d}
+#start button.alt{background:#ffffff1f;color:var(--tx)}
 </style></head><body>
-<canvas id="cv"></canvas><canvas id="gc"></canvas><div id="dots"></div><div id="ui"><div id="in"></div></div>
+<canvas id="cv"></canvas><canvas id="gc"></canvas>
+<div id="topwrap"><div id="dots"></div><div id="ap"><button id="apM" class="on">Manual</button><button id="apA">Auto</button></div></div>
+<div id="ui"><div id="in"></div></div>
+<audio id="vo" preload="none"></audio>
+<div id="start"><h1>NeuroPredict 3D Story</h1><p>Mode nivda</p>
+<div class="row"><button id="sM" class="alt">Manual</button><button id="sA">Auto</button></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 const $=id=>document.getElementById(id),V='#a78bfa',RO='#fb7185',M='#5eead4',WH='#f1eefb';
@@ -113,12 +126,22 @@ const S=[
 {v:{b:.3,h:.3},cam:[0,10],ch:CH.jr,t:'Honest conclusion',l:['A real but modest gain at a fixed cut-off. EEG-only still has the higher AUC (0.806 vs 0.763; gap not confirmed).','The EEG model transferred poorly and the heart did much of the work. A stacked combiner reached 70.0%, but <b>64.6% is far too low for safety use</b>.'],k:['70.0%','stacked meta-classifier']}];
 const dots=$('dots');S.forEach(()=>dots.appendChild(document.createElement('i')));
 let st=0,mode=0,mt=0,tp=0,sa=0,cur={y:0,z:10};
+// --- autoplay + optional per-step voiceover (audio/1.mp3, audio/2.mp3, ... next to this file) ---
+const vo=$('vo');let auto=false,apT=null;
+function clearAP(){clearTimeout(apT);apT=null}
+function scheduleFallback(){clearAP();const s=S[st],words=(s.l||[]).join(' ').split(/\s+/).length;const dur=Math.max(5500,Math.min(11000,2200+words*90));apT=setTimeout(()=>{if(auto)go(st+1)},dur)}
+function setAuto(v){auto=v;$('apM').classList.toggle('on',!v);$('apA').classList.toggle('on',v);clearAP();if(v)scheduleFallback()}
+vo.addEventListener('playing',clearAP);
+vo.addEventListener('ended',()=>{if(auto)go(st+1)});
+vo.addEventListener('error',()=>{if(auto)scheduleFallback()});
+function playVO(n){vo.pause();vo.src=`audio/${n+1}.mp3`;vo.currentTime=0;vo.play().catch(()=>{if(auto)scheduleFallback()})}
+$('apM').onclick=e=>{e.stopPropagation();setAuto(false)};$('apA').onclick=e=>{e.stopPropagation();setAuto(true)};
 function go(n){if(n>=S.length)n=0;if(n<0)n=0;st=n;tp=0;const s=S[n];for(const k in A)A[k].t=s.v[k]||0;
 $('in').innerHTML=`<div class="s">Step ${n+1} of ${S.length}</div><h1>${s.t}${s.m?'<span id="chip"></span>':''}</h1>${s.l.map(x=>`<p>${x}</p>`).join('')}${s.k?`<div class="k"><strong>${s.k[0]}</strong><span>${s.k[1]}</span></div>`:''}<div id="nv"><button id="bk">‹ Back</button><button id="nx">Next ›</button><span>Space / click</span></div>`;
-[...dots.children].forEach((d,i)=>d.className=i<=n?'on':'');chip()}
+[...dots.children].forEach((d,i)=>d.className=i<=n?'on':'');chip();playVO(n);if(auto)scheduleFallback()}
 function chip(){const c=$('chip');if(c){c.textContent=mode?'doing math':'resting';c.style.color=mode?RO:M}}
-addEventListener('click',e=>{if(e.target.id==='bk')go(st-1);else go(st+1)});
-addEventListener('keydown',e=>{if(e.code==='Space'||e.key==='ArrowRight'||e.key==='Enter'){e.preventDefault();go(st+1)}else if(e.key==='ArrowLeft'||e.key==='Backspace')go(st-1)});
+addEventListener('click',e=>{if(e.target.closest('#ap'))return;if(e.target.id==='bk')go(st-1);else go(st+1)});
+addEventListener('keydown',e=>{if($('start'))return;if(e.code==='Space'||e.key==='ArrowRight'||e.key==='Enter'){e.preventDefault();go(st+1)}else if(e.key==='ArrowLeft'||e.key==='Backspace')go(st-1)});
 let T=0,wf=4,wa=.2,hr=1.2,last=performance.now();
 function frame(now){requestAnimationFrame(frame);const dt=Math.min((now-last)/1000,.05);last=now;T+=dt;mt+=dt;
 if(mt>3.6){mt=0;mode^=1;chip()}
@@ -138,5 +161,7 @@ sa+=((dsk&&s.ch&&!s.ch.wide?1:0)-sa)*.06;cam.setViewOffset(sw,sh,sw*.24*sa,0,sw,
 cam.position.set(Math.sin(a)*cur.z,cur.y,Math.cos(a)*cur.z);cam.lookAt(0,cur.y,0);R.render(sc,cam);
 gx.clearRect(0,0,sw,sh);tp=Math.min(1.7,tp+dt/2.6);
 if(s.ch){const r=dsk?(s.ch.wide?[.04,.12,.92,.7]:[.46,.07,.52,.84]):[.03,.05,.94,.9];draw(s.ch,sw*r[0],sh*r[1],sw*r[2],sh*r[3],tp,T)}}
+function begin(a){$('start').remove();setAuto(a);go(0)}$('start').onclick=e=>e.stopPropagation();
+$('sM').onclick=e=>{e.stopPropagation();begin(false)};$('sA').onclick=e=>{e.stopPropagation();begin(true)};
 go(0);requestAnimationFrame(frame);
 </script></body></html>
